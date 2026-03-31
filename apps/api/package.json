@@ -1,7 +1,7 @@
 {
   "name": "agents-studio-api",
   "version": "1.0.0",
-  "description": "Agents Studio BFF — NestJS proxy for agent_core",
+  "description": "Agents Studio BFF — NestJS API: JWT auth, Prisma/SQLite, SSE; proxies to FastAPI agent_core with X-Agent-Core-Token",
   "scripts": {
     "build": "nest build",
     "start": "node dist/main",

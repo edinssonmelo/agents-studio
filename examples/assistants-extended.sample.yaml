@@ -1,0 +1,10 @@
+# Sample only — merge manually into assistants.yaml
+assistants:
+  me:
+    agents:
+      notes:
+        description: "Short notes and bullet drafts"
+        keywords: [note, jot, bullet, list]
+        model: deepseek-chat
+        max_output: 800
+        prompt_file: prompts/dev.txt

@@ -34,3 +34,10 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Local agent-core data volume (compose default)
+/data/
+
+# Python
+apps/agent-core/.pytest_cache/
+apps/agent-core/**/__pycache__/

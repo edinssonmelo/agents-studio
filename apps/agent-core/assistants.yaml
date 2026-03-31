@@ -1,0 +1,83 @@
+assistants:
+  me:
+    agents:
+      design:
+        description: "Brand, visual design, color, UI"
+        keywords:
+          - design
+          - logo
+          - color
+          - palette
+          - typography
+          - UI
+          - mockup
+          - brand
+          - visual
+        model: deepseek-chat
+        max_output: 1200
+        prompt_file: prompts/design.txt
+      marketing:
+        description: "Content, copy, social, campaigns"
+        keywords:
+          - marketing
+          - content
+          - copy
+          - post
+          - campaign
+          - social
+          - hashtag
+        model: deepseek-chat
+        max_output: 1000
+        prompt_file: prompts/marketing.txt
+      business:
+        description: "Strategy, planning, pricing"
+        keywords:
+          - business
+          - strategy
+          - revenue
+          - cost
+          - plan
+          - proposal
+          - price
+        model: deepseek-chat
+        max_output: 1200
+        prompt_file: prompts/business.txt
+      dev:
+        description: "Code, infra, Docker, debugging"
+        keywords:
+          - code
+          - script
+          - docker
+          - error
+          - bug
+          - infra
+          - deploy
+          - git
+          - server
+        model: deepseek-chat
+        max_output: 1500
+        prompt_file: prompts/dev.txt
+
+  wife:
+    agents:
+      coordinator:
+        description: "Priorities, planning, and cross-cutting decisions (demo agent)."
+        keywords:
+          - plan
+          - priority
+          - organize
+          - decision
+          - roadmap
+        model: deepseek-chat
+        max_output: 1200
+        prompt_file: prompts/coordinator.txt
+      support:
+        description: "Helpful second-line assistant for follow-ups and summaries (demo agent)."
+        keywords:
+          - summary
+          - follow up
+          - recap
+          - clarify
+        model: deepseek-chat
+        max_output: 1000
+        prompt_file: prompts/support.txt

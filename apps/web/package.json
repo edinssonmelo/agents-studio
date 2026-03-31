@@ -1,6 +1,7 @@
 {
   "name": "agents-studio-web",
   "version": "1.0.0",
+  "description": "Agents Studio UI — Next.js control plane for YAML-driven multi-agent systems (pairs with apps/api and apps/agent-core)",
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000",

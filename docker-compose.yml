@@ -1,20 +1,47 @@
-# docker-compose.yml — reference stack for production-like deploys
+# docker-compose.yml — Agents Studio (web + api + agent-core)
 #
-# Requires: external Docker network `net_internal` (create: docker network create net_internal)
-# and a running agent_core on that network. Copy .env.example → .env and set all variables.
-#
-# Example:
+# Default: internal bridge network `agents-studio` (clone-and-run, no external network required).
+# Copy .env.example → .env and set secrets. Quick start:
 #   docker compose --env-file .env up -d --build
+#
+# Advanced (Traefik / existing proxy): see docs/ARCHITECTURE.md — attach services to your
+# external network and set DOMAIN / labels accordingly.
 
 networks:
-  net_internal:
-    external: true
+  agents-studio:
+    driver: bridge
 
 volumes:
   studio_db:
     driver: local
 
 services:
+
+  # ── Agent Core (FastAPI, internal only) ─────────────────────────────────────
+  agent_core:
+    build:
+      context: ./apps/agent-core
+      dockerfile: Dockerfile
+    container_name: agents-studio-agent-core
+    restart: unless-stopped
+    environment:
+      AGENT_CORE_TOKEN: ${AGENT_CORE_TOKEN}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      ASSISTANTS_YAML: /data/agent-core/assistants.yaml
+      AGENT_CORE_CONFIG_ROOT: /data/agent-core
+      AGENT_CORE_DATA_ROOT: /data/agent-core-data/users
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - ${AGENT_CORE_CONFIG_PATH:-./apps/agent-core}:/data/agent-core:rw
+      - ${AGENT_CORE_DATA_PATH:-./data/agent-core-data}:/data/agent-core-data:rw
+    networks:
+      - agents-studio
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://127.0.0.1:8766/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   # ── BFF ───────────────────────────────────────────────────────────────────
   api:
@@ -23,32 +50,29 @@ services:
       dockerfile: Dockerfile
     container_name: agents-studio-api
     restart: unless-stopped
+    depends_on:
+      agent_core:
+        condition: service_healthy
     environment:
       NODE_ENV: production
       PORT: 3001
-      # Auth
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       USER_ME_PASSWORD: ${USER_ME_PASSWORD}
       USER_WIFE_PASSWORD: ${USER_WIFE_PASSWORD}
-      # agent_core connection (never exposed to browser)
       AGENT_CORE_URL: ${AGENT_CORE_URL:-http://agent_core:8766}
       AGENT_CORE_TOKEN: ${AGENT_CORE_TOKEN}
       AGENT_CORE_TIMEOUT: ${AGENT_CORE_TIMEOUT:-90000}
-      # agent_core CODE files (assistants.yaml + prompts/)
       AGENT_CORE_CONFIG_ROOT: /data/agent-core
-      # agent_core DATA files (users/ memory)
       AGENT_CORE_DATA_ROOT: /data/agent-core-data
-      # SQLite
       DATABASE_URL: file:/data/studio/studio.db
-      # CORS — override for local HTTP (e.g. FRONTEND_ORIGIN=http://localhost:3000)
       FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-https://${DOMAIN}}
     volumes:
       - studio_db:/data/studio
-      - ${AGENT_CORE_CONFIG_PATH:?Set AGENT_CORE_CONFIG_PATH in .env}:/data/agent-core:rw
-      - ${AGENT_CORE_DATA_PATH:?Set AGENT_CORE_DATA_PATH in .env}:/data/agent-core-data:rw
+      - ${AGENT_CORE_CONFIG_PATH:-./apps/agent-core}:/data/agent-core:rw
+      - ${AGENT_CORE_DATA_PATH:-./data/agent-core-data}:/data/agent-core-data:rw
     networks:
-      - net_internal
+      - agents-studio
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/agents/health || exit 1"]
       interval: 30s
@@ -56,9 +80,9 @@ services:
       retries: 3
       start_period: 25s
     labels:
-      traefik.enable: "false"   # api is never public
+      traefik.enable: "false"
 
-  # ── Frontend ──────────────────────────────────────────────────────────────
+  # ── Frontend ─────────────────────────────────────────────────────────────
   web:
     build:
       context: ./apps/web
@@ -71,21 +95,18 @@ services:
       NODE_ENV: production
       PORT: 3000
       API_INTERNAL_URL: http://api:3001
-      # Next.js bind: container HOSTNAME defaults to container id; 0.0.0.0 enables loopback healthchecks
       HOSTNAME: "0.0.0.0"
     depends_on:
       api:
         condition: service_healthy
     networks:
-      - net_internal
+      - agents-studio
     healthcheck:
-      # / redirige (307 con Location raro) y wget falla; /login devuelve 200
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
-    # Traefik (optional): adapt labels to your proxy / entrypoint names
     labels:
       - traefik.enable=true
       - "traefik.http.routers.agentsstudio.rule=Host(`${DOMAIN}`)"

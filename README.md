@@ -1,62 +1,119 @@
 # Agents Studio
 
-A **web control plane** for operating a multi-assistant agent system backed by an **`agent_core`-style HTTP API**. Use it to browse agents, edit prompts and catalog YAML, trigger test runs, stream runtime events, and keep a lightweight audit trail—without exposing orchestrator secrets to the browser.
+**Web control plane for YAML-driven multi-agent systems.** Configure assistants and prompts from the browser, run tasks against an internal orchestrator, and keep audit history—without exposing orchestrator tokens to clients.
 
-The UI is intentionally minimal (sidebar, tree, inspector) so you can focus on configuration and observability.
+**Audience:** operators, solo builders, and teams who want a **self-hosted** studio over **file-backed** config (`assistants.yaml`, `prompts/*.txt`) and a small FastAPI **agent core**.
+
+**Docs for humans:** this file and [docs/README.md](docs/README.md).  
+**Docs for coding assistants:** [AGENTS.md](AGENTS.md) (repo map, invariants, common failures).
 
 ---
 
-## What problem does this solve?
+## Table of contents
 
-| Use case | How Studio helps |
-|----------|------------------|
-| **Operate** | See which agents exist per assistant, run ad-hoc tasks, reset working memory, append durable notes. |
-| **Configure** | Edit `assistants.yaml` and `prompts/*.txt` from the browser; optional hot-reload on the core if it supports `POST /admin/reload-config`. |
-| **Observe** | SSE timeline of run start/complete, config reload, and related events (no raw chain-of-thought). |
-| **Govern** | SQLite-backed audit log and config snapshots (who changed what, when). |
+- [Purpose](#purpose)
+- [What you get](#what-you-get)
+- [What this is not](#what-this-is-not)
+- [Architecture](#architecture)
+- [Glossary](#glossary)
+- [Security model](#security-model)
+- [Prerequisites](#prerequisites)
+- [Quick start](#quick-start)
+- [Production behind a reverse proxy](#production-behind-a-reverse-proxy)
+- [agent_core HTTP contract](#agent_core-http-contract)
+- [Editing configuration from the UI](#editing-configuration-from-the-ui)
+- [Operations](#operations)
+- [Project layout](#project-layout)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
-Studio is **not** a replacement for your LLM gateway or chat product. It sits **next to** a small internal API (“agent core”) that already owns routing, models, and file-backed memory.
+---
+
+## Purpose
+
+Agents Studio solves a narrow problem well:
+
+1. **Operate** — See agents per logical assistant, run ad-hoc tasks, reset working memory, append durable notes.
+2. **Configure** — Edit catalog and prompts in the UI; reload the core without rebuilding images when `POST /admin/reload-config` is available.
+3. **Observe** — Server-Sent Events timeline for runs and config events (no raw chain-of-thought).
+4. **Govern** — SQLite-backed audit log and config snapshots (who changed what, when).
+
+Typical keywords for search and discovery: *self-hosted agent studio*, *YAML agent catalog*, *NestJS BFF*, *FastAPI agent orchestrator*, *Docker Compose*, *multi-assistant*, *prompt management*, *internal LLM gateway*.
+
+---
+
+## What you get
+
+| Component | Role |
+|-----------|------|
+| **`apps/web`** | Next.js 14 UI; proxies `/api` to the BFF. |
+| **`apps/api`** | NestJS BFF: JWT login, Prisma/SQLite, SSE, **only place that stores `AGENT_CORE_TOKEN`** for server-side calls. |
+| **`apps/agent-core`** | FastAPI: loads `assistants.yaml`, routes tasks, calls the configured LLM API, reads/writes memory files. |
+
+All three run together via **`docker-compose.yml`** on an internal Docker network (`agents-studio`).
+
+---
+
+## What this is not
+
+- **Not** a full chat SaaS or customer-facing bot host.
+- **Not** LangChain/LangGraph in this repo—the pattern is **declarative YAML + one HTTP orchestrator**.
+- **Not** mandatory to use any specific gateway; see [docs/OPENCLAW.md](docs/OPENCLAW.md) for an optional integration pattern.
 
 ---
 
 ## Architecture
 
 ```
-Browser ──HTTPS──► reverse proxy (optional) ──► [web :3000] ──/api/*──► [api :3001] (BFF)
-                                                                          │
-                                                                          ▼
-                                                              agent_core :8766 (same Docker network)
-                                                                          │
-                                                                          ▼
-                                                              Host volumes: YAML, prompts, users/*/memory
+Browser ──► reverse proxy (optional) ──► [web :3000] ──/api/*──► [api :3001] (BFF)
+                                                                    │
+                                                                    ▼
+                                                        [agent_core :8766] (internal only)
+                                                                    │
+                                                                    ▼
+                                                        Volumes: YAML, prompts, users/*/memory
 ```
 
-- **Frontend (`web`)**: Next.js 14 (App Router). Proxies `/api` to the BFF.
-- **Backend (`api`)**: NestJS. Holds `AGENT_CORE_TOKEN`, talks to `agent_core`, persists audit/preferences in **SQLite** (Prisma).
-- **Realtime**: Server-Sent Events (`/api/sse/events`) from the BFF.
+- **Browser → `web`**: HTML/JS; no orchestrator secrets.
+- **`web` → `api`**: Same-origin or configured API base; JWT for studio users.
+- **`api` → `agent_core`**: HTTP on Docker DNS name **`agent_core`**, header **`X-Agent-Core-Token`**.
+
+Deeper detail, volume paths, and optional external networks: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
+
+---
+
+## Glossary
+
+| Term | Meaning |
+|------|---------|
+| **BFF** | Backend-for-frontend; here, NestJS `api` that talks to `agent_core`. |
+| **agent_core** | Python FastAPI service in `apps/agent-core`; the orchestrator. |
+| **Assistant (logical)** | A key in `assistants.yaml` (default examples: `me`, `wife`). |
+| **Agent** | A named specialist under an assistant (keywords, model, `prompt_file`). |
+| **Catalog** | `assistants.yaml` + loaded prompts. |
+| **Config volume** | Host path → `/data/agent-core` in containers (YAML + `prompts/`). |
+| **Data volume** | Host path → `/data/agent-core-data`; contains `users/<assistant>/...`. |
 
 ---
 
 ## Security model
 
-1. **`AGENT_CORE_TOKEN` exists only in the BFF environment**—never in the browser or frontend bundle.
-2. Studio users authenticate with **JWT** after login (`USER_ME_PASSWORD` / `USER_WIFE_PASSWORD` in `.env`). Map these logical users to your own policy (e.g. two operators, or rename in code later).
-3. In production, terminate TLS at your reverse proxy; set `FRONTEND_ORIGIN` / `DOMAIN` to match the URL users actually use (CORS + cookies behavior).
+1. **`AGENT_CORE_TOKEN`** exists only in **`api`** and **`agent_core`** environments—never in the browser bundle.
+2. Studio operators sign in with **JWT** (`USER_ME_PASSWORD` / `USER_WIFE_PASSWORD` in `.env`); rename users in code if you need different roles.
+3. Terminate TLS at your reverse proxy; set **`FRONTEND_ORIGIN`** and **`DOMAIN`** to match the URL users use.
+4. Keep **`agent_core`** off the public internet; expose only **`web`** (or your edge) intentionally.
 
 ---
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose v2** (plugin).
-- A Docker **bridge network** that both Studio and `agent_core` attach to (this repo expects an **external** network named `net_internal` by default—create it once: `docker network create net_internal`).
-- A running **`agent_core` (or compatible)** service on that network, reachable at `http://agent_core:8766` (or override `AGENT_CORE_URL`).
-- Recommended on `agent_core`:
-  - `POST /admin/reload-config` (authenticated) to reload YAML without restarting.
-  - Read-only or read-write mounts for `assistants.yaml` and `prompts/` consistent with what Studio mounts from the host.
+- **Docker** and **Docker Compose v2**.
+- A provider API key for real runs: default stack uses **DeepSeek** in `apps/agent-core` (see `.env.example`). Swapping providers requires code changes in the runner.
 
 ---
 
-## Quick start (local or single host)
+## Quick start
 
 ### 1. Clone and configure
 
@@ -68,25 +125,38 @@ cp .env.example .env
 
 Edit `.env`:
 
-- **`DOMAIN`**: Hostname users open in the browser (e.g. `studio.example.com` or `localhost`—see CORS note below).
-- **`JWT_SECRET`**: Long random string (`openssl rand -base64 48`).
-- **`USER_*_PASSWORD`**: Passwords for the two built-in accounts (`me`, `wife`).
-- **`AGENT_CORE_TOKEN`**: Must match the token expected by `agent_core`.
-- **`AGENT_CORE_CONFIG_PATH`**: Host directory containing `assistants.yaml` and `prompts/`.
-- **`AGENT_CORE_DATA_PATH`**: Host directory for per-user data (e.g. `users/<assistant>/...`).
+| Variable | Notes |
+|----------|--------|
+| `DOMAIN` | Hostname for Traefik-style labels; use `localhost` for local-only experiments. |
+| `JWT_SECRET` | Long random string (`openssl rand -base64 48`). |
+| `USER_ME_PASSWORD` / `USER_WIFE_PASSWORD` | Studio operator accounts. |
+| `AGENT_CORE_TOKEN` | Same value in both services that call or serve the core. |
+| `DEEPSEEK_API_KEY` | Required for live `/run` against DeepSeek. |
+| `AGENT_CORE_CONFIG_PATH` / `AGENT_CORE_DATA_PATH` | Defaults: `./apps/agent-core` and `./data/agent-core-data`. |
 
-### 2. Create the Docker network (first time only)
+Optional starter files for memory:
 
 ```bash
-docker network create net_internal
+mkdir -p ./data/agent-core-data/users/me ./data/agent-core-data/users/wife
+cp apps/agent-core/seed-data/users/me/global.md ./data/agent-core-data/users/me/
+cp apps/agent-core/seed-data/users/wife/global.md ./data/agent-core-data/users/wife/
 ```
 
-Ensure your **`agent_core` container** is attached to **`net_internal`** and is named **`agent_core`** (or change `AGENT_CORE_URL`).
-
-### 3. Build and run
+### 2. Build and run
 
 ```bash
 docker compose --env-file .env up -d --build
+```
+
+No pre-created external Docker network is required; Compose defines **`agents-studio`**.
+
+### 3. Local access without Traefik
+
+Set `FRONTEND_ORIGIN=http://localhost:3000` in `.env` and add a port mapping on **`web`**, for example:
+
+```yaml
+ports:
+  - "3000:3000"
 ```
 
 ### 4. Smoke checks
@@ -94,57 +164,53 @@ docker compose --env-file .env up -d --build
 ```bash
 docker compose ps
 docker exec agents-studio-api wget -qO- http://127.0.0.1:3001/api/agents/health
+docker exec agents-studio-agent-core curl -sf http://127.0.0.1:8766/healthz
 ```
 
-Open `https://<DOMAIN>` (or `http://localhost:3000` if you publish the web port for dev—see below) and sign in as **`me`** or **`wife`**.
-
-**Local HTTP:** Set `FRONTEND_ORIGIN=http://localhost:3000` in `.env` (and expose port 3000 if needed) so the BFF CORS matches the browser `Origin` header.
+Open the UI (your published URL or `http://localhost:3000`) and sign in as **`me`** or **`wife`**.
 
 ---
 
 ## Production behind a reverse proxy
 
-Typical patterns:
+1. Route public hostname → **`web`** (port 3000); TLS at the edge.
+2. Do **not** expose **`api`** or **`agent_core`** directly.
+3. Ensure **`api`** resolves **`agent_core`** on the Compose network.
 
-1. **Traefik / Caddy / nginx** routes `Host: your-studio.example.com` to the **`web`** container (port 3000). TLS at the edge.
-2. **Do not** expose the **`api`** container publicly; only `web` should be routable.
-3. Add your hostname to the proxy and point DNS to the server.
-4. If you use Cloudflare Tunnel or similar, map the public hostname to your internal proxy upstream (e.g. `http://traefik:80`)—exact steps depend on your edge stack.
-
-Traefik label examples vary by version; this repository ships a **reference** `docker-compose.yml` with labels you can adapt or remove if you use another proxy.
+Traefik labels in `docker-compose.yml` are examples—adapt to your proxy. External shared networks: **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**.
 
 ---
 
-## `agent_core` contract (summary)
+## agent_core HTTP contract
 
-Studio expects (authenticated with `X-Agent-Core-Token` except where noted):
+Authenticated with **`X-Agent-Core-Token`** except where noted:
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET | `/healthz` | Liveness (no token). |
 | GET | `/agents?assistant_id=me\|wife` | List agents: `{ "assistant_id", "agents": [ { "name", "description" } ] }`. |
-| POST | `/run` | Run task (body per your core). |
+| POST | `/run` | Execute routed task. |
 | DELETE | `/session/{assistant}/{agent}` | Clear working memory file. |
-| POST | `/memory/{assistant}/{agent}/append` | Append to durable memory. |
-| GET | `/metrics` | Optional metrics text. |
-| POST | `/admin/reload-config` | Optional hot-reload of YAML. |
+| POST | `/memory/{assistant}/{agent}/append` | Append durable memory. |
+| GET | `/metrics` | Metrics text. |
+| POST | `/admin/reload-config` | Reload YAML from disk. |
 
-If your core uses different assistant IDs, adapt the Studio code (`AssistantId` type, login users, and UI labels).
+Another service on the same Docker network can call **`POST http://agent_core:8766/run`** with the same header and JSON body; see **[docs/OPENCLAW.md](docs/OPENCLAW.md)**.
 
 ---
 
 ## Editing configuration from the UI
 
-The API container mounts:
+**`api`** and **`agent_core`** mount the same host paths:
 
-| In container | Typical host source |
+| In container | Default host source |
 |--------------|---------------------|
-| `/data/agent-core` | Your `assistants.yaml` + `prompts/` tree |
-| `/data/agent-core-data` | Runtime `users/` tree (memory, working files) |
+| `/data/agent-core` | `AGENT_CORE_CONFIG_PATH` → `assistants.yaml` + `prompts/` |
+| `/data/agent-core-data` | `AGENT_CORE_DATA_PATH` → `users/…` tree |
 
-After saving YAML, Studio calls **`POST /admin/reload-config`** on `agent_core` when available. If that endpoint is missing, restart the core or rely on your own reload mechanism.
+After saving YAML, Studio triggers **`POST /admin/reload-config`** on `agent_core` when possible.
 
-**Prompt files:** the editor maps an agent name to `prompts/<agent>.txt`. Keep `prompt_file` in YAML consistent with those basenames if you use the built-in prompt tab.
+**Prompt paths:** `prompt_file` in YAML is resolved under **`AGENT_CORE_CONFIG_ROOT`** (see `apps/agent-core/agents/runner.py`).
 
 ---
 
@@ -162,6 +228,7 @@ docker compose --env-file .env up -d --build --remove-orphans
 ```bash
 docker compose logs -f api
 docker compose logs -f web
+docker compose logs -f agent_core
 ```
 
 ### API tests (development)
@@ -173,23 +240,37 @@ npx prisma generate
 npm test
 ```
 
+### Agent-core tests (Python)
+
+```bash
+cd apps/agent-core
+python3 -m pip install -r requirements.txt
+python3 -m pytest tests/ -q
+```
+
 ### Rollback
 
-Use git to check out a previous revision, rebuild, and `up -d`. The SQLite volume (`studio_db`) keeps audit data unless you remove the volume intentionally.
+Check out a previous git revision, rebuild, `up -d`. SQLite volume **`studio_db`** retains audit data unless removed.
 
 ---
 
 ## Project layout
 
-```
+```text
 agents-studio/
-├── apps/
-│   ├── api/                 # NestJS BFF (Prisma + SQLite)
-│   └── web/                 # Next.js 14 frontend
-├── agent-core-extensions/  # Historical notes / patch snippets for reload endpoint
+├── AGENTS.md                 # Orientation for AI coding assistants
+├── README.md                 # This file
 ├── docker-compose.yml
 ├── .env.example
-└── README.md
+├── apps/
+│   ├── api/                  # NestJS BFF (Prisma + SQLite)
+│   ├── web/                  # Next.js 14 frontend
+│   └── agent-core/           # FastAPI orchestrator + YAML + prompts + tests
+├── docs/
+│   ├── README.md             # Documentation index
+│   ├── ARCHITECTURE.md
+│   └── OPENCLAW.md
+└── examples/                 # Optional snippets (not loaded automatically)
 ```
 
 ---
@@ -198,27 +279,27 @@ agents-studio/
 
 | Symptom | What to check |
 |---------|----------------|
-| Empty agent tree | API returns `{ assistant_id, agents: [...] }`. Token mismatch, wrong `assistant_id`, or empty catalog in YAML. |
-| `agent_core unavailable` | From `agents-studio-api`: reachability to `AGENT_CORE_URL`, token, same Docker network. |
-| Login fails | `USER_ME_PASSWORD` / `USER_WIFE_PASSWORD`, `JWT_SECRET`. |
-| SSE drops | `JWT_SECRET` consistent; proxy buffering (disable for SSE path if needed). |
-| Healthcheck failures on `web` | Next.js bind + path: compose uses `/login` and `HOSTNAME=0.0.0.0`—keep in sync if you change images. |
-| Traefik 404 | Router labels, network attachment, container **healthy** (unhealthy backends may be skipped). |
+| Empty agent tree | Token mismatch; `AGENT_CORE_URL`; YAML empty for that assistant; response shape vs frontend (see [AGENTS.md](AGENTS.md)). |
+| `agent_core unavailable` | Network, service name `agent_core`, health of core container. |
+| Login fails | Passwords, `JWT_SECRET`. |
+| SSE drops | Proxy buffering; consistent `JWT_SECRET`. |
+| `web` healthcheck fails | `HOSTNAME=0.0.0.0`, path `/login` in Compose. |
+| Traefik 404 | Labels, networks, container health. |
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome. Please avoid committing `.env`, local credentials, or production URLs.
+Issues and PRs welcome. Do not commit `.env`, secrets, or production-only URLs.
 
 ---
 
 ## License
 
-Specify your license in a `LICENSE` file at the repository root (e.g. MIT). This README does not impose a license by itself.
+Add a `LICENSE` file at the repository root (e.g. MIT). This README does not grant a license by itself.
 
 ---
 
 ## Acknowledgements
 
-Built with Next.js, NestJS, Prisma, TanStack Query patterns, and Docker. Designed to pair with a small FastAPI (or other) **agent core** service you operate separately.
+Built with Next.js, NestJS, Prisma, FastAPI, and Docker.
