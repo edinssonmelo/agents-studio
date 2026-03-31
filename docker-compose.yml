@@ -76,14 +76,15 @@ services:
       NODE_ENV: production
       PORT: 3000
       API_INTERNAL_URL: http://api:3001
+      # Docker suele poner HOSTNAME al id del contenedor; Next puede enlazar solo ahí y fallar healthcheck/127.0.0.1
+      HOSTNAME: "0.0.0.0"
     depends_on:
       api:
         condition: service_healthy
     networks:
       - net_internal
     healthcheck:
-      # Next standalone enlaza al hostname del contenedor, no a 127.0.0.1 (ver log "Local: http://<id>:3000")
-      test: ["CMD-SHELL", "wget -qO- http://$$(hostname):3000/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
