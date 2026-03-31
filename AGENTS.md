@@ -76,6 +76,7 @@ See root **`README.md`** → Quick start (Docker Compose). For tests: `apps/api`
 |-----|---------|
 | [README.md](README.md) | Install, env vars, operations, troubleshooting |
 | [docs/README.md](docs/README.md) | Documentation index |
+| [docs/DEFINING_AGENTS.md](docs/DEFINING_AGENTS.md) | YAML + prompts + memory for operators |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, volumes, networks |
 | [docs/OPENCLAW.md](docs/OPENCLAW.md) | Calling `agent_core` from another container (e.g. gateway) |
 

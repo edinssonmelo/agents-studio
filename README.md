@@ -4,7 +4,7 @@
 
 **In one sentence:** it is a **web interface** to manage your **agent setup** (YAML + prompts), **execute** jobs through a **backend orchestrator**, and **see runtime activity** (timeline + audit log) in one place.
 
-**Docs index:** [docs/README.md](docs/README.md) · **For AI assistants:** [AGENTS.md](AGENTS.md)
+**Docs index:** [docs/README.md](docs/README.md) · **Define agents (YAML + prompts):** [docs/DEFINING_AGENTS.md](docs/DEFINING_AGENTS.md) · **For AI assistants:** [AGENTS.md](AGENTS.md)
 
 ---
 
@@ -58,6 +58,8 @@ Browser
 | `agent_core` | FastAPI | Catalog, router, runner, memory on disk. |
 
 More detail: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+**Customize agents:** step-by-step YAML, prompt files, memory layout, and field reference — [docs/DEFINING_AGENTS.md](docs/DEFINING_AGENTS.md).
 
 ---
 
@@ -178,7 +180,7 @@ agents-studio/
 │   ├── web/                # Next.js UI
 │   ├── api/                # NestJS BFF
 │   └── agent-core/         # FastAPI orchestrator
-├── docs/                   # Architecture, integrations
+├── docs/                   # Architecture, defining agents, integrations
 └── examples/               # Optional snippets (not auto-loaded)
 ```
 
