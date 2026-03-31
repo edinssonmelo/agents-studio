@@ -9,8 +9,6 @@
 # Deploy:
 #   docker compose -p agents-studio --env-file .env up -d --build
 
-version: "3.9"
-
 networks:
   net_internal:
     external: true

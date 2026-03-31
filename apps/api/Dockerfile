@@ -21,6 +21,8 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
+RUN apk add --no-cache openssl libc6-compat
+
 # Non-root user
 RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup
 
@@ -32,8 +34,8 @@ RUN npx prisma generate
 
 COPY --from=builder /app/dist ./dist
 
-# SQLite DB directory
-RUN mkdir -p /data/studio && chown appuser:appgroup /data/studio
+# SQLite DB dir + Prisma engines must be writable by appuser (migrate deploy)
+RUN mkdir -p /data/studio && chown -R appuser:appgroup /data/studio /app
 
 USER appuser
 
