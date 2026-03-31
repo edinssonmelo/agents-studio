@@ -12,8 +12,6 @@
 networks:
   net_internal:
     external: true
-  net_studio:
-    internal: true       # private bus: web ↔ api only
 
 volumes:
   studio_db:
@@ -55,7 +53,6 @@ services:
       # agent_core DATA: user memory files
       - ${AGENT_CORE_DATA_PATH:-/srv/data/agent-core}:/data/agent-core-data:rw
     networks:
-      - net_studio
       - net_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/agents/health || exit 1"]
@@ -83,7 +80,6 @@ services:
       api:
         condition: service_healthy
     networks:
-      - net_studio
       - net_internal
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
