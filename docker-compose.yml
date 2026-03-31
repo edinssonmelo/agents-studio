@@ -82,8 +82,8 @@ services:
     networks:
       - net_internal
     healthcheck:
-      # localhost puede resolver a ::1; Next suele escuchar solo IPv4 → usar 127.0.0.1
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      # Next standalone enlaza al hostname del contenedor, no a 127.0.0.1 (ver log "Local: http://<id>:3000")
+      test: ["CMD-SHELL", "wget -qO- http://$$(hostname):3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
