@@ -1,144 +1,170 @@
 # Agents Studio
 
-Visual control plane for `agent_core` — inspect, configure, run and monitor your agents from a clean Notion-style interface.
+A **web control plane** for operating a multi-assistant agent system backed by an **`agent_core`-style HTTP API**. Use it to browse agents, edit prompts and catalog YAML, trigger test runs, stream runtime events, and keep a lightweight audit trail—without exposing orchestrator secrets to the browser.
 
-**URL:** `https://agents.edinssonmelo.com`  
-**Stack:** Next.js 14 · NestJS · Prisma/SQLite · SSE · Traefik · Docker Compose
+The UI is intentionally minimal (sidebar, tree, inspector) so you can focus on configuration and observability.
+
+---
+
+## What problem does this solve?
+
+| Use case | How Studio helps |
+|----------|------------------|
+| **Operate** | See which agents exist per assistant, run ad-hoc tasks, reset working memory, append durable notes. |
+| **Configure** | Edit `assistants.yaml` and `prompts/*.txt` from the browser; optional hot-reload on the core if it supports `POST /admin/reload-config`. |
+| **Observe** | SSE timeline of run start/complete, config reload, and related events (no raw chain-of-thought). |
+| **Govern** | SQLite-backed audit log and config snapshots (who changed what, when). |
+
+Studio is **not** a replacement for your LLM gateway or chat product. It sits **next to** a small internal API (“agent core”) that already owns routing, models, and file-backed memory.
 
 ---
 
 ## Architecture
 
 ```
-Internet → Traefik (TLS) → [web :3000] → /api/* rewrites → [api :3001]
-                                                               ↓
-                                                   agent_core:8766 (net_internal)
-                                                               ↓
-                                                   /data/agent-core (volumes)
+Browser ──HTTPS──► reverse proxy (optional) ──► [web :3000] ──/api/*──► [api :3001] (BFF)
+                                                                          │
+                                                                          ▼
+                                                              agent_core :8766 (same Docker network)
+                                                                          │
+                                                                          ▼
+                                                              Host volumes: YAML, prompts, users/*/memory
 ```
 
-### Three panels — Notion-like
+- **Frontend (`web`)**: Next.js 14 (App Router). Proxies `/api` to the BFF.
+- **Backend (`api`)**: NestJS. Holds `AGENT_CORE_TOKEN`, talks to `agent_core`, persists audit/preferences in **SQLite** (Prisma).
+- **Realtime**: Server-Sent Events (`/api/sse/events`) from the BFF.
 
-| Panel | Component | Purpose |
-|-------|-----------|---------|
-| Sidebar | `Sidebar.tsx` | Assistant selector, nav, user |
-| Tree | `AgentTree.tsx` | assistant → agents hierarchy |
-| Inspector | `Inspector.tsx` | 5 tabs: Overview · Runtime · Memory · Prompt · Actions |
+---
 
-### Security model
+## Security model
 
-- `AGENT_CORE_TOKEN` lives **only** in the BFF (`api`). The browser never sees it.
-- All `agent_core` calls are proxied through `AgentsService`.
-- The `api` container is on `net_studio` (private) + `net_internal`. It is **not** exposed via Traefik.
-- `/admin/reload-config` on `agent_core` is only reachable from `net_internal`.
+1. **`AGENT_CORE_TOKEN` exists only in the BFF environment**—never in the browser or frontend bundle.
+2. Studio users authenticate with **JWT** after login (`USER_ME_PASSWORD` / `USER_WIFE_PASSWORD` in `.env`). Map these logical users to your own policy (e.g. two operators, or rename in code later).
+3. In production, terminate TLS at your reverse proxy; set `FRONTEND_ORIGIN` / `DOMAIN` to match the URL users actually use (CORS + cookies behavior).
 
 ---
 
 ## Prerequisites
 
-- VPS with Docker + Docker Compose v2
-- Traefik en `net_internal` con entrypoint **web** (:80); TLS en Cloudflare (igual que `me.*` / `wife.*` en el `compose/openclaw.yml` del repo de infra)
-- `agent_core` running on `net_internal` as hostname `agent_core`
-- Domain DNS pointing to your server (`agents.edinssonmelo.com → <VPS IP>`)
+- **Docker** and **Docker Compose v2** (plugin).
+- A Docker **bridge network** that both Studio and `agent_core` attach to (this repo expects an **external** network named `net_internal` by default—create it once: `docker network create net_internal`).
+- A running **`agent_core` (or compatible)** service on that network, reachable at `http://agent_core:8766` (or override `AGENT_CORE_URL`).
+- Recommended on `agent_core`:
+  - `POST /admin/reload-config` (authenticated) to reload YAML without restarting.
+  - Read-only or read-write mounts for `assistants.yaml` and `prompts/` consistent with what Studio mounts from the host.
 
 ---
 
-## First-time deployment
+## Quick start (local or single host)
 
-### 1. Clone repo on the server
-
-```bash
-ssh user@your-vps
-git clone https://github.com/your-org/agents-studio /srv/apps/agents-studio
-cd /srv/apps/agents-studio
-```
-
-### 2. Configure environment
+### 1. Clone and configure
 
 ```bash
+git clone https://github.com/<your-org>/agents-studio.git
+cd agents-studio
 cp .env.example .env
-nano .env          # fill in all values — see comments in .env.example
 ```
 
-Required values:
+Edit `.env`:
 
-| Variable | Description |
-|----------|-------------|
-| `DOMAIN` | `agents.edinssonmelo.com` |
-| `JWT_SECRET` | Long random string (`openssl rand -base64 48`) |
-| `USER_ME_PASSWORD` | Password for user `me` (plain or bcrypt hash) |
-| `USER_WIFE_PASSWORD` | Password for user `wife` |
-| `AGENT_CORE_TOKEN` | Same token as in your infra `.env` |
-| `AGENT_CORE_CONFIG_PATH` | Host path to `agent-core/` directory (has `assistants.yaml`) |
-| `AGENT_CORE_DATA_PATH` | Host path to `agent-core` runtime data (`users/`) |
+- **`DOMAIN`**: Hostname users open in the browser (e.g. `studio.example.com` or `localhost`—see CORS note below).
+- **`JWT_SECRET`**: Long random string (`openssl rand -base64 48`).
+- **`USER_*_PASSWORD`**: Passwords for the two built-in accounts (`me`, `wife`).
+- **`AGENT_CORE_TOKEN`**: Must match the token expected by `agent_core`.
+- **`AGENT_CORE_CONFIG_PATH`**: Host directory containing `assistants.yaml` and `prompts/`.
+- **`AGENT_CORE_DATA_PATH`**: Host directory for per-user data (e.g. `users/<assistant>/...`).
 
-### 3. Actualizar `agent_core` en el servidor (reload + prompts montados)
-
-En el repo de infra, `agent_core` ya incluye **`POST /admin/reload-config`** y el compose monta **`prompts/`** desde el repo. Tras `git pull`:
+### 2. Create the Docker network (first time only)
 
 ```bash
-cd /srv/apps/infra
-make openclaw-rebuild-agent-core
-
-set -a && source .env && set +a
-docker exec infra-agent_core-1 curl -fsS -X POST \
-  -H "X-Agent-Core-Token: $AGENT_CORE_TOKEN" \
-  http://127.0.0.1:8766/admin/reload-config
+docker network create net_internal
 ```
 
-### 4. Cloudflare Tunnel
+Ensure your **`agent_core` container** is attached to **`net_internal`** and is named **`agent_core`** (or change `AGENT_CORE_URL`).
 
-En Zero Trust → tu túnel → **Public Hostname**: `agents.edinssonmelo.com` → **`http://traefik:80`** (mismo origen que n8n / OpenClaw).
-
-### 5. Launch
+### 3. Build and run
 
 ```bash
-cd /srv/apps/agents-studio
-docker compose -p agents-studio --env-file .env up -d --build
+docker compose --env-file .env up -d --build
 ```
 
-### 6. Verify
+### 4. Smoke checks
 
 ```bash
-# Check containers
-docker compose -p agents-studio ps
-
-# API health
-docker exec agents-studio-api wget -qO- http://localhost:3001/api/agents/health
-
-# Check logs
-docker compose -p agents-studio logs -f --tail=50
+docker compose ps
+docker exec agents-studio-api wget -qO- http://127.0.0.1:3001/api/agents/health
 ```
 
-Open `https://agents.edinssonmelo.com` — sign in with `me` or `wife`.
+Open `https://<DOMAIN>` (or `http://localhost:3000` if you publish the web port for dev—see below) and sign in as **`me`** or **`wife`**.
+
+**Local HTTP:** Set `FRONTEND_ORIGIN=http://localhost:3000` in `.env` (and expose port 3000 if needed) so the BFF CORS matches the browser `Origin` header.
 
 ---
 
-## Day-to-day operations
+## Production behind a reverse proxy
 
-### Update (standard deploy)
+Typical patterns:
+
+1. **Traefik / Caddy / nginx** routes `Host: your-studio.example.com` to the **`web`** container (port 3000). TLS at the edge.
+2. **Do not** expose the **`api`** container publicly; only `web` should be routable.
+3. Add your hostname to the proxy and point DNS to the server.
+4. If you use Cloudflare Tunnel or similar, map the public hostname to your internal proxy upstream (e.g. `http://traefik:80`)—exact steps depend on your edge stack.
+
+Traefik label examples vary by version; this repository ships a **reference** `docker-compose.yml` with labels you can adapt or remove if you use another proxy.
+
+---
+
+## `agent_core` contract (summary)
+
+Studio expects (authenticated with `X-Agent-Core-Token` except where noted):
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET | `/healthz` | Liveness (no token). |
+| GET | `/agents?assistant_id=me\|wife` | List agents: `{ "assistant_id", "agents": [ { "name", "description" } ] }`. |
+| POST | `/run` | Run task (body per your core). |
+| DELETE | `/session/{assistant}/{agent}` | Clear working memory file. |
+| POST | `/memory/{assistant}/{agent}/append` | Append to durable memory. |
+| GET | `/metrics` | Optional metrics text. |
+| POST | `/admin/reload-config` | Optional hot-reload of YAML. |
+
+If your core uses different assistant IDs, adapt the Studio code (`AssistantId` type, login users, and UI labels).
+
+---
+
+## Editing configuration from the UI
+
+The API container mounts:
+
+| In container | Typical host source |
+|--------------|---------------------|
+| `/data/agent-core` | Your `assistants.yaml` + `prompts/` tree |
+| `/data/agent-core-data` | Runtime `users/` tree (memory, working files) |
+
+After saving YAML, Studio calls **`POST /admin/reload-config`** on `agent_core` when available. If that endpoint is missing, restart the core or rely on your own reload mechanism.
+
+**Prompt files:** the editor maps an agent name to `prompts/<agent>.txt`. Keep `prompt_file` in YAML consistent with those basenames if you use the built-in prompt tab.
+
+---
+
+## Operations
+
+### Update images
 
 ```bash
-cd /srv/apps/agents-studio
-git pull origin main
-docker compose -p agents-studio --env-file .env up -d --build --remove-orphans
+git pull
+docker compose --env-file .env up -d --build --remove-orphans
 ```
 
-### View logs
+### Logs
 
 ```bash
-docker compose -p agents-studio logs -f api
-docker compose -p agents-studio logs -f web
+docker compose logs -f api
+docker compose logs -f web
 ```
 
-### Restart a single service
-
-```bash
-docker compose -p agents-studio restart api
-docker compose -p agents-studio restart web
-```
-
-### Run API tests
+### API tests (development)
 
 ```bash
 cd apps/api
@@ -147,124 +173,20 @@ npx prisma generate
 npm test
 ```
 
----
+### Rollback
 
-## Rollback procedure
-
-### Quick rollback (previous image)
-
-```bash
-cd /srv/apps/agents-studio
-
-# 1. Find previous commit
-git log --oneline -10
-
-# 2. Check out previous commit
-git checkout <previous-sha>
-
-# 3. Rebuild
-docker compose -p agents-studio --env-file .env up -d --build
-
-# 4. Verify
-docker compose -p agents-studio ps
-```
-
-### Full rollback (keep data)
-
-```bash
-# Data is in named volume studio_db — NOT affected by rollback.
-# To inspect:
-docker volume inspect agents-studio_studio_db
-
-# To backup before rollback:
-docker run --rm \
-  -v agents-studio_studio_db:/data \
-  -v $(pwd)/backups:/backup \
-  alpine sh -c "cp -r /data /backup/studio_db_$(date +%Y%m%d_%H%M%S)"
-```
-
-### Nuclear rollback (reset DB)
-
-```bash
-# WARNING: destroys all audit logs and preferences
-docker compose -p agents-studio down
-docker volume rm agents-studio_studio_db
-docker compose -p agents-studio --env-file .env up -d --build
-```
+Use git to check out a previous revision, rebuild, and `up -d`. The SQLite volume (`studio_db`) keeps audit data unless you remove the volume intentionally.
 
 ---
 
-## Config file editing
-
-Agents Studio can edit `assistants.yaml` and `prompts/*.txt` directly. The BFF writes to the host-mounted paths and then calls `/admin/reload-config` on `agent_core` to hot-reload without restart.
-
-**Volume mapping:**
-
-| Container path | Host path (configured in `.env`) |
-|----------------|----------------------------------|
-| `/data/agent-core/assistants.yaml` | `$AGENT_CORE_CONFIG_PATH/assistants.yaml` |
-| `/data/agent-core/prompts/` | `$AGENT_CORE_CONFIG_PATH/prompts/` |
-| `/data/agent-core-data/users/` | `$AGENT_CORE_DATA_PATH/users/` |
-
-If `reload-config` fails (endpoint not patched yet), the file is still saved on disk. Restart `agent_core` manually to pick up changes.
-
----
-
-## SSE (realtime)
-
-The frontend connects to `/api/sse/events?token=<jwt>&assistant_id=me` via `EventSource`. Events flow:
-
-```
-agent_core HTTP call → NestJS EventEmitter2 → SseController → browser EventSource
-```
-
-EventSource auto-reconnects on disconnect. A heartbeat comment is sent every 20s to keep the connection alive through Traefik.
-
----
-
-## What is NOT touched by this service
-
-- `/srv/data/openclaw/*` — OpenClaw personal memory
-- `infra-openclaw_me-1` and `infra-openclaw_wife-1` containers
-- `net_internal` services other than `agent_core`
-- Any existing Traefik configuration
-
----
-
-## Directory structure
+## Project layout
 
 ```
 agents-studio/
 ├── apps/
-│   ├── api/                    # NestJS BFF
-│   │   ├── src/
-│   │   │   ├── config/         # Env validation
-│   │   │   ├── common/         # Guards, filters, decorators
-│   │   │   ├── prisma/         # PrismaService
-│   │   │   └── modules/
-│   │   │       ├── auth/       # JWT login
-│   │   │       ├── agents/     # agent_core proxy
-│   │   │       ├── config-editor/ # YAML + prompt editor
-│   │   │       ├── sse/        # Server-Sent Events
-│   │   │       └── audit/      # Log query
-│   │   ├── prisma/schema.prisma
-│   │   └── Dockerfile
-│   └── web/                    # Next.js 14
-│       ├── src/
-│       │   ├── app/
-│       │   │   ├── login/
-│       │   │   └── studio/
-│       │   │       └── config/
-│       │   ├── components/
-│       │   │   ├── layout/     # StudioShell, Sidebar
-│       │   │   └── studio/     # AgentTree, Inspector, tabs
-│       │   ├── hooks/          # use-sse, use-agents
-│       │   └── lib/            # api-client, store, utils
-│       └── Dockerfile
-├── agent-core-extensions/
-│   └── reload_config_patch.py  # Instructions to add /admin/reload-config
-├── .github/workflows/
-│   └── deploy.yml
+│   ├── api/                 # NestJS BFF (Prisma + SQLite)
+│   └── web/                 # Next.js 14 frontend
+├── agent-core-extensions/  # Historical notes / patch snippets for reload endpoint
 ├── docker-compose.yml
 ├── .env.example
 └── README.md
@@ -274,11 +196,29 @@ agents-studio/
 
 ## Troubleshooting
 
-| Symptom | Fix |
-|---------|-----|
-| `agent_core unavailable` | Check `docker exec agents-studio-api wget -qO- http://agent_core:8766/healthz` |
-| Login fails | Check `USER_ME_PASSWORD` / `USER_WIFE_PASSWORD` in `.env` |
-| Config reload shows warning | Apply the reload patch to `agent_core/main.py` |
-| SSE not connecting | Check `JWT_SECRET` matches between login token and SSE token |
-| 404 desde Internet | Añade el hostname en Cloudflare Tunnel (origen `http://traefik:80`) |
-| Empty agent tree | Verify `AGENT_CORE_TOKEN` matches infra `.env` exactly |
+| Symptom | What to check |
+|---------|----------------|
+| Empty agent tree | API returns `{ assistant_id, agents: [...] }`. Token mismatch, wrong `assistant_id`, or empty catalog in YAML. |
+| `agent_core unavailable` | From `agents-studio-api`: reachability to `AGENT_CORE_URL`, token, same Docker network. |
+| Login fails | `USER_ME_PASSWORD` / `USER_WIFE_PASSWORD`, `JWT_SECRET`. |
+| SSE drops | `JWT_SECRET` consistent; proxy buffering (disable for SSE path if needed). |
+| Healthcheck failures on `web` | Next.js bind + path: compose uses `/login` and `HOSTNAME=0.0.0.0`—keep in sync if you change images. |
+| Traefik 404 | Router labels, network attachment, container **healthy** (unhealthy backends may be skipped). |
+
+---
+
+## Contributing
+
+Issues and PRs welcome. Please avoid committing `.env`, local credentials, or production URLs.
+
+---
+
+## License
+
+Specify your license in a `LICENSE` file at the repository root (e.g. MIT). This README does not impose a license by itself.
+
+---
+
+## Acknowledgements
+
+Built with Next.js, NestJS, Prisma, TanStack Query patterns, and Docker. Designed to pair with a small FastAPI (or other) **agent core** service you operate separately.

@@ -1,13 +1,10 @@
-# docker-compose.yml
-# Agents Studio — full stack
+# docker-compose.yml — reference stack for production-like deploys
 #
-# Assumes:
-#   - Traefik (compose/proxy.yml): HTTP :80 on net_internal; TLS en Cloudflare
-#   - agent_core en net_internal → http://agent_core:8766
-#   - .env desde .env.example
+# Requires: external Docker network `net_internal` (create: docker network create net_internal)
+# and a running agent_core on that network. Copy .env.example → .env and set all variables.
 #
-# Deploy:
-#   docker compose -p agents-studio --env-file .env up -d --build
+# Example:
+#   docker compose --env-file .env up -d --build
 
 networks:
   net_internal:
@@ -44,14 +41,12 @@ services:
       AGENT_CORE_DATA_ROOT: /data/agent-core-data
       # SQLite
       DATABASE_URL: file:/data/studio/studio.db
-      # CORS origin
-      FRONTEND_ORIGIN: https://${DOMAIN}
+      # CORS — override for local HTTP (e.g. FRONTEND_ORIGIN=http://localhost:3000)
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-https://${DOMAIN}}
     volumes:
       - studio_db:/data/studio
-      # agent_core CODE: same path as the running agent_core container
-      - ${AGENT_CORE_CONFIG_PATH:-/srv/apps/infra/agent-core}:/data/agent-core:rw
-      # agent_core DATA: user memory files
-      - ${AGENT_CORE_DATA_PATH:-/srv/data/agent-core}:/data/agent-core-data:rw
+      - ${AGENT_CORE_CONFIG_PATH:?Set AGENT_CORE_CONFIG_PATH in .env}:/data/agent-core:rw
+      - ${AGENT_CORE_DATA_PATH:?Set AGENT_CORE_DATA_PATH in .env}:/data/agent-core-data:rw
     networks:
       - net_internal
     healthcheck:
@@ -76,7 +71,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       API_INTERNAL_URL: http://api:3001
-      # Docker suele poner HOSTNAME al id del contenedor; Next puede enlazar solo ahí y fallar healthcheck/127.0.0.1
+      # Next.js bind: container HOSTNAME defaults to container id; 0.0.0.0 enables loopback healthchecks
       HOSTNAME: "0.0.0.0"
     depends_on:
       api:
@@ -90,7 +85,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
-    # Mismo patrón que n8n; nombre de router sin guiones por si Traefik v3 lo interpreta mal.
+    # Traefik (optional): adapt labels to your proxy / entrypoint names
     labels:
       - traefik.enable=true
       - "traefik.http.routers.agentsstudio.rule=Host(`${DOMAIN}`)"
