@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { IsString, IsNotEmpty, IsIn, IsOptional, MaxLength } from 'class-validator';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { Public } from '../../common/decorators/public.decorator';
 import { CurrentUser, JwtPayload } from '../../common/decorators/current-user.decorator';
 import { AgentsService, AssistantId, RunAgentDto, AppendMemoryDto } from './agents.service';
 
@@ -34,6 +35,7 @@ class AppendMemoryBodyDto implements AppendMemoryDto {
 export class AgentsController {
   constructor(private readonly agentsService: AgentsService) {}
 
+  @Public()
   @Get('health')
   health() {
     return this.agentsService.health();
