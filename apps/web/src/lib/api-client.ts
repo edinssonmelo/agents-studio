@@ -33,8 +33,10 @@ export interface Agent {
   max_output?: number;
 }
 
-export interface AgentsResponse {
-  assistants: Record<string, { agents: Record<string, Agent> }>;
+/** Respuesta real de agent_core GET /agents */
+export interface AgentsListResponse {
+  assistant_id: AssistantId;
+  agents: Array<{ name: string; description: string }>;
 }
 
 export interface RunResult {
@@ -128,7 +130,7 @@ export const agentsApi = {
   health: () => apiFetch<{ ok: boolean }>('/agents/health'),
 
   list: (assistantId: AssistantId) =>
-    apiFetch<AgentsResponse>(`/agents?assistant_id=${assistantId}`),
+    apiFetch<AgentsListResponse>(`/agents?assistant_id=${assistantId}`),
 
   run: (payload: {
     task: string;
