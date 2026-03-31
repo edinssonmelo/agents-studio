@@ -84,7 +84,8 @@ services:
     networks:
       - net_internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      # / redirige (307 con Location raro) y wget falla; /login devuelve 200
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/login || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
