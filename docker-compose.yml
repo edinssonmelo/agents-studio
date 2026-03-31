@@ -87,13 +87,9 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+    # Mismo patrón que n8n en compose/automation.yml (router y servicio comparten nombre).
     labels:
-      traefik.enable: "true"
-
-      # HTTP router (TLS termina en Cloudflare → cloudflared → Traefik :80)
-      # Sin traefik.docker.network: con varias redes Traefik elige la compartida con el proxy (como n8n).
-      traefik.http.routers.agents-studio.rule: "Host(`${DOMAIN}`)"
-      traefik.http.routers.agents-studio.entrypoints: "web"
-      traefik.http.routers.agents-studio.service: "agents-studio-svc"
-
-      traefik.http.services.agents-studio-svc.loadbalancer.server.port: "3000"
+      - traefik.enable=true
+      - "traefik.http.routers.agents-studio.rule=Host(`${DOMAIN}`)"
+      - traefik.http.routers.agents-studio.entrypoints=web
+      - traefik.http.services.agents-studio.loadbalancer.server.port=3000
