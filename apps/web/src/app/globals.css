@@ -1,0 +1,85 @@
+/* src/app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 98%;
+    --foreground: 240 10% 9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 9%;
+    --border: 240 5% 90%;
+    --input: 240 5% 90%;
+    --ring: 240 5% 65%;
+    --primary: 240 6% 15%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 6% 25%;
+    --muted: 240 5% 95%;
+    --muted-foreground: 240 4% 50%;
+    --accent: 240 5% 93%;
+    --accent-foreground: 240 6% 15%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 98%;
+    --sidebar: 240 6% 96%;
+    --sidebar-border: 240 5% 90%;
+    --sidebar-item: 240 5% 93%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 240 6% 10%;
+    --foreground: 240 5% 92%;
+    --card: 240 6% 13%;
+    --card-foreground: 240 5% 92%;
+    --border: 240 4% 20%;
+    --input: 240 4% 20%;
+    --ring: 240 4% 40%;
+    --primary: 240 5% 90%;
+    --primary-foreground: 240 6% 10%;
+    --secondary: 240 4% 17%;
+    --secondary-foreground: 240 5% 75%;
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 4% 55%;
+    --accent: 240 4% 18%;
+    --accent-foreground: 240 5% 90%;
+    --destructive: 0 62% 55%;
+    --destructive-foreground: 0 0% 98%;
+    --sidebar: 240 6% 11%;
+    --sidebar-border: 240 4% 18%;
+    --sidebar-item: 240 4% 15%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground; }
+  
+  /* Scrollbar - minimal like Notion */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-border rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-muted-foreground/30; }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+  
+  /* Fade animation for panel transitions */
+  .animate-in { animation: fade-in 0.15s ease-out; }
+  
+  @keyframes fade-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Status dot pulse */
+  .status-dot {
+    @apply inline-block w-2 h-2 rounded-full;
+  }
+  .status-dot.healthy { @apply bg-green-500; }
+  .status-dot.error   { @apply bg-red-500; }
+  .status-dot.idle    { @apply bg-muted-foreground/40; }
+  .status-dot.running { @apply bg-blue-500 animate-pulse; }
+}

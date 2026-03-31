@@ -1,0 +1,49 @@
+// Prisma schema — agents-studio audit + preferences
+// SQLite for simplicity; replace with PostgreSQL if needed
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model AuditLog {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  userId      String   // "me" | "wife"
+  action      String   // "run_agent" | "reset_session" | "append_memory" | "edit_config" | "apply_config"
+  assistantId String   // "me" | "wife"
+  agentName   String?
+  payload     String?  // JSON string of relevant metadata
+  result      String?  // "success" | "error"
+  errorMsg    String?
+  durationMs  Int?
+
+  @@index([userId, createdAt])
+  @@index([assistantId, agentName])
+}
+
+model UserPreference {
+  id          Int      @id @default(autoincrement())
+  updatedAt   DateTime @updatedAt
+  userId      String   @unique // "me" | "wife"
+  selectedAssistant String @default("me")
+  sidebarOpen Boolean  @default(true)
+  selectedAgent String?
+  settings    String   @default("{}") // JSON blob for extra prefs
+}
+
+model ConfigSnapshot {
+  id          Int      @id @default(autoincrement())
+  createdAt   DateTime @default(now())
+  userId      String
+  configType  String   // "assistants_yaml" | "prompt"
+  agentName   String?
+  contentBefore String
+  contentAfter  String
+  applied     Boolean  @default(false)
+  appliedAt   DateTime?
+}

@@ -1,0 +1,111 @@
+# docker-compose.yml
+# Agents Studio — full stack
+#
+# Assumes:
+#   - Traefik (compose/proxy.yml): HTTP :80 on net_internal; TLS en Cloudflare
+#   - agent_core en net_internal → http://agent_core:8766
+#   - .env desde .env.example
+#
+# Deploy:
+#   docker compose -p agents-studio --env-file .env up -d --build
+
+version: "3.9"
+
+networks:
+  net_internal:
+    external: true
+  net_studio:
+    internal: true       # private bus: web ↔ api only
+
+volumes:
+  studio_db:
+    driver: local
+
+services:
+
+  # ── BFF ───────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: agents-studio-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      # Auth
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
+      USER_ME_PASSWORD: ${USER_ME_PASSWORD}
+      USER_WIFE_PASSWORD: ${USER_WIFE_PASSWORD}
+      # agent_core connection (never exposed to browser)
+      AGENT_CORE_URL: ${AGENT_CORE_URL:-http://agent_core:8766}
+      AGENT_CORE_TOKEN: ${AGENT_CORE_TOKEN}
+      AGENT_CORE_TIMEOUT: ${AGENT_CORE_TIMEOUT:-90000}
+      # agent_core CODE files (assistants.yaml + prompts/)
+      AGENT_CORE_CONFIG_ROOT: /data/agent-core
+      # agent_core DATA files (users/ memory)
+      AGENT_CORE_DATA_ROOT: /data/agent-core-data
+      # SQLite
+      DATABASE_URL: file:/data/studio/studio.db
+      # CORS origin
+      FRONTEND_ORIGIN: https://${DOMAIN}
+    volumes:
+      - studio_db:/data/studio
+      # agent_core CODE: same path as the running agent_core container
+      - ${AGENT_CORE_CONFIG_PATH:-/srv/apps/infra/agent-core}:/data/agent-core:rw
+      # agent_core DATA: user memory files
+      - ${AGENT_CORE_DATA_PATH:-/srv/data/agent-core}:/data/agent-core-data:rw
+    networks:
+      - net_studio
+      - net_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/agents/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 25s
+    labels:
+      traefik.enable: "false"   # api is never public
+
+  # ── Frontend ──────────────────────────────────────────────────────────────
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:3001
+    container_name: agents-studio-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_INTERNAL_URL: http://api:3001
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - net_studio
+      - net_internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: net_internal
+
+      # HTTP router (TLS termina en Cloudflare → cloudflared → Traefik :80)
+      traefik.http.routers.agents-studio.rule: "Host(`${DOMAIN}`)"
+      traefik.http.routers.agents-studio.entrypoints: "web"
+      traefik.http.routers.agents-studio.service: "agents-studio-svc"
+      traefik.http.routers.agents-studio.middlewares: "studio-headers@docker"
+
+      traefik.http.services.agents-studio-svc.loadbalancer.server.port: "3000"
+
+      traefik.http.middlewares.studio-headers.headers.customResponseHeaders.X-Frame-Options: "DENY"
+      traefik.http.middlewares.studio-headers.headers.customResponseHeaders.X-Content-Type-Options: "nosniff"
+      traefik.http.middlewares.studio-headers.headers.customResponseHeaders.Referrer-Policy: "strict-origin-when-cross-origin"
+      traefik.http.middlewares.studio-headers.headers.customResponseHeaders.X-Accel-Buffering: "no"
