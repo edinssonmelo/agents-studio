@@ -41,9 +41,9 @@ export class AgentsService {
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
   ) {
-    this.baseUrl = this.config.get<string>('agentCore.url');
-    this.token = this.config.get<string>('agentCore.token');
-    this.requestTimeout = this.config.get<number>('agentCore.timeout');
+    this.baseUrl = this.config.get<string>('agentCore.url', 'http://agent_core:8766');
+    this.token = this.config.get<string>('agentCore.token', '');
+    this.requestTimeout = this.config.get<number>('agentCore.timeout', 90000);
   }
 
   private headers() {

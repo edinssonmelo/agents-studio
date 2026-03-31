@@ -34,8 +34,8 @@ export class ConfigEditorService {
     private readonly agentsService: AgentsService,
     private readonly eventEmitter: EventEmitter2,
   ) {
-    this.configRoot = this.config.get<string>('agentCoreConfigRoot');
-    this.dataRoot   = this.config.get<string>('agentCoreDataRoot');
+    this.configRoot = this.config.get<string>('agentCoreConfigRoot', '/data/agent-core');
+    this.dataRoot   = this.config.get<string>('agentCoreDataRoot', '/data/agent-core-data');
     this.assistantsYamlPath = path.join(this.configRoot, 'assistants.yaml');
     this.promptsDir = path.join(this.configRoot, 'prompts');
   }
