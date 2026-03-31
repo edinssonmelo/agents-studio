@@ -1,12 +1,12 @@
-# Documentation index
+# Documentation
 
-Start here to navigate Agents Studio documentation.
+Short guides for Agents Studio.
 
-| Document | Audience | Contents |
-|----------|----------|----------|
-| [README.md](../README.md) | Everyone | Purpose, quick start, env vars, API contract summary, troubleshooting |
-| [AGENTS.md](../AGENTS.md) | Developers & AI assistants | Repo map, invariants, common bugs, pointers to code |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | Integrators & maintainers | Three-service layout, `agent_core` layers, volumes, advanced networking |
-| [OPENCLAW.md](OPENCLAW.md) | Integrators | HTTP example: external gateway → `POST /run` on internal `agent_core` |
+| File | Read this if you… |
+|------|-------------------|
+| [README.md](../README.md) | Want to install, understand what the project is, or use the HTTP API. |
+| [AGENTS.md](../AGENTS.md) | Are changing code (or an AI assistant needs a file map). |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Need diagrams, volumes, networks, or extension pointers. |
+| [OPENCLAW.md](OPENCLAW.md) | Want another service (e.g. a gateway) to call `agent_core` on Docker. |
 
-**Suggested order:** README → ARCHITECTURE (if deploying or extending) → OPENCLAW (if wiring another service) → AGENTS (if modifying code).
+**Order:** README → (optional) ARCHITECTURE → OPENCLAW.

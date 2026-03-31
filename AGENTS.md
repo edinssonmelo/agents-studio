@@ -11,6 +11,7 @@ The **orchestrator** is a separate Python service (**`agent_core`**, FastAPI) in
 ## What this project is not
 
 - Not a hosted chat product or a general RAG framework.
+- **Not LangGraph / LangChain** — the bundled orchestrator is FastAPI + YAML routing + (typically) one LLM call per run; graph engines can be integrated **beside** or **instead of** `agent_core` if you match the HTTP contract.
 - Not a replacement for your LLM provider; `agent_core` calls an API (default: DeepSeek) per run.
 - The NestJS app does **not** embed the Python logic; integration is **HTTP + `X-Agent-Core-Token`** on the Docker network.
 

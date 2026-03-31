@@ -1,4 +1,6 @@
-# External gateway → agent_core (example: OpenClaw)
+# External gateway → agent_core
+
+*(Example: OpenClaw or any bridge on the same Docker network.)*
 
 This pattern applies to **any** service that should invoke the same orchestrator as Agents Studio (e.g. a chat gateway, automation bot, or **OpenClaw**-style bridge)—**not** only OpenClaw.
 

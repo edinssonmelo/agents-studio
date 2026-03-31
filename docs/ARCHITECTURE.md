@@ -50,11 +50,18 @@ flowchart LR
 
 ## Layers inside agent_core
 
+This repo ships a **straightforward** orchestrator (not LangGraph): YAML catalog, router, then usually **one** LLM completion per handled run.
+
 1. **Catalog** — `assistants.yaml` defines logical assistants (`me`, `wife` in the stock example) and their agents (keywords, model, `prompt_file`). Cached load; hot-reload via `POST /admin/reload-config`.
 2. **Router** — Slash-commands, hints, keywords, optional LLM classification; may return `handled: false` for out-of-scope tasks.
-3. **Runner** — Typically one chat completion per specialized run (provider wired in code; default DeepSeek).
+3. **Runner** — Typically one chat completion per specialized run (provider wired in code; default DeepSeek). Swap or extend in `apps/agent-core/agents/runner.py`.
 4. **Disk memory** — Per assistant: `global.md`; per agent: `memory.md`, `working.md` under the data volume.
 5. **HTTP API** — `run`, `agents`, session reset, memory append, metrics, admin reload (see README contract table).
+
+### Scaling and advanced workflows
+
+- **Horizontal scale:** multiple `agent_core` replicas need a shared filesystem or external store for memory files if you want consistent state (not documented as a turnkey feature here).
+- **Graph / multi-step flows:** implement them **outside** this repo (another service) or **replace** `agent_core` with a service that exposes the same HTTP contract your BFF expects.
 
 ## Volume layout (important for integrators)
 
