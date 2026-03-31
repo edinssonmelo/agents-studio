@@ -25,6 +25,8 @@ RUN npm run build
 FROM node:20-alpine AS runner
 WORKDIR /app
 
+RUN apk add --no-cache wget
+
 RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup
 
 ENV NODE_ENV=production

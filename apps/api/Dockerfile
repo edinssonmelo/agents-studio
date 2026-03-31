@@ -21,7 +21,7 @@ FROM node:20-alpine AS runner
 
 WORKDIR /app
 
-RUN apk add --no-cache openssl libc6-compat
+RUN apk add --no-cache openssl libc6-compat wget
 
 # Non-root user
 RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup
