@@ -55,7 +55,7 @@ services:
     networks:
       - net_internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/api/agents/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3001/api/agents/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -82,14 +82,15 @@ services:
     networks:
       - net_internal
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 || exit 1"]
+      # localhost puede resolver a ::1; Next suele escuchar solo IPv4 → usar 127.0.0.1
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 15s
-    # Mismo patrón que n8n en compose/automation.yml (router y servicio comparten nombre).
+    # Mismo patrón que n8n; nombre de router sin guiones por si Traefik v3 lo interpreta mal.
     labels:
       - traefik.enable=true
-      - "traefik.http.routers.agents-studio.rule=Host(`${DOMAIN}`)"
-      - traefik.http.routers.agents-studio.entrypoints=web
-      - traefik.http.services.agents-studio.loadbalancer.server.port=3000
+      - "traefik.http.routers.agentsstudio.rule=Host(`${DOMAIN}`)"
+      - traefik.http.routers.agentsstudio.entrypoints=web
+      - traefik.http.services.agentsstudio.loadbalancer.server.port=3000
